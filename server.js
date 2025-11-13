@@ -1,4 +1,3 @@
-// backend/server.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -7,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// CONNECT TO MONGO DB
+// CONNECT TO YOUR MONGO DB
 mongoose.connect(
   'mongodb+srv://ranjanabhi2468_db_user:5IkHfpx60WlHYRQa@cluster0.xc3da1w.mongodb.net/neurolink?retryWrites=true&w=majority'
 )
@@ -47,27 +46,17 @@ app.post('/auth', async (req, res) => {
   }
 });
 
-// SAVE PROFILE — FIXED: RETURN UPDATED USER
+// SAVE PROFILE
 app.post('/save-profile', async (req, res) => {
   const { fingerprintId, name, email } = req.body;
   try {
-    const updatedUser = await User.findOneAndUpdate(
+    await User.findOneAndUpdate(
       { fingerprintId },
       { name, email },
       { new: true }
     );
-
-    // RETURN THE FULL USER SO FRONTEND CAN SHOW NAME/EMAIL
-    res.json({
-      success: true,
-      user: {
-        name: updatedUser.name,
-        email: updatedUser.email,
-        userId: updatedUser.userId,
-      },
-    });
+    res.json({ success: true });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
