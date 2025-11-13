@@ -45,7 +45,7 @@ app.post('/auth', async (req, res) => {
     await user.save();
 
     res.json({ success: true, newUser: true, userId });
-  } catch (err: any) {
+  } catch (err) {
     if (err.code === 11000) {
       return res.status(400).json({ success: false, error: 'Fingerprint already registered' });
     }
@@ -78,7 +78,7 @@ app.post('/save-profile', async (req, res) => {
         fingerprintId: updated.fingerprintId,
       },
     });
-  } catch (err: any) {
+  } catch (err) {
     if (err.code === 11000) {
       return res.status(400).json({ success: false, error: 'Email already in use' });
     }
