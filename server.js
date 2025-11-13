@@ -13,12 +13,16 @@ mongoose.connect(
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.error(err));
 
-// USER SCHEMA — email must be unique
+// USER SCHEMA — with journals array
 const userSchema = new mongoose.Schema({
   fingerprintId: { type: String, required: true, unique: true },
   userId: { type: String, required: true, unique: true },
   name: String,
-  email: { type: String, unique: true, sparse: true }, // sparse = allow null
+  email: { type: String, unique: true, sparse: true },
+  journals: [{
+    text: { type: String, required: true },
+    timestamp: { type: Date, default: Date.now },
+  }],
 });
 
 const User = mongoose.model('User', userSchema);
@@ -36,6 +40,7 @@ app.post('/auth', async (req, res) => {
           email: user.email,
           userId: user.userId,
           fingerprintId: user.fingerprintId,
+          journals: user.journals,
         },
       });
     }
@@ -53,11 +58,10 @@ app.post('/auth', async (req, res) => {
   }
 });
 
-// SAVE PROFILE — CHECK EMAIL UNIQUENESS
+// SAVE PROFILE
 app.post('/save-profile', async (req, res) => {
   const { fingerprintId, name, email } = req.body;
   try {
-    // Check if email already used by another fingerprint
     const existing = await User.findOne({ email, fingerprintId: { $ne: fingerprintId } });
     if (existing) {
       return res.status(400).json({ success: false, error: 'Email already in use' });
@@ -76,12 +80,36 @@ app.post('/save-profile', async (req, res) => {
         email: updated.email,
         userId: updated.userId,
         fingerprintId: updated.fingerprintId,
+        journals: updated.journals,
       },
     });
   } catch (err) {
     if (err.code === 11000) {
       return res.status(400).json({ success: false, error: 'Email already in use' });
     }
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// NEW: SAVE JOURNAL
+app.post('/save-journal', async (req, res) => {
+  const { userId, text } = req.body;
+  try {
+    const user = await User.findOneAndUpdate(
+      { userId },
+      { $push: { journals: { text, timestamp: new Date() } } },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      journals: user.journals,
+    });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
