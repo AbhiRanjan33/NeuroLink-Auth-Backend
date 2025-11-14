@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 
 const app = express();
+const fetch=require('node-fetch');
 
 // Middleware
 app.use(cors());
@@ -127,6 +128,61 @@ app.post('/save-journal', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// New route: /transcribe
+app.post('/transcribe', async (req, res) => {
+  const { audioUri } = req.body; // Audio URI from app
+  const API_KEY = process.env.ASSEMBLYAI_API_KEY; // Add to .env
+
+  try {
+    // Download audio from app's local URI (base64)
+    const audioResponse = await fetch(audioUri);
+    const audioBuffer = await audioResponse.buffer();
+
+    // Upload to AssemblyAI
+    const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+      method: 'POST',
+      headers: {
+        'authorization': API_KEY,
+        'content-type': 'application/octet-stream',
+      },
+      body: audioBuffer,
+    });
+    const uploadData = await uploadResponse.json();
+    const audioUrl = uploadData.upload_url;
+
+    // Transcribe
+    const transcribeResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+      method: 'POST',
+      headers: {
+        'authorization': API_KEY,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        audio_url: audioUrl,
+        language_code: 'en', // English; future: 'hi' for Hindi
+      }),
+    });
+    const transcribeData = await transcribeResponse.json();
+    const transcriptId = transcribeData.id;
+
+    // Poll for results (simple loop)
+    let transcript = null;
+    while (!transcript) {
+      const pollResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+        headers: { 'authorization': API_KEY },
+      });
+      transcript = await pollResponse.json();
+      if (transcript.status === 'completed') break;
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s
+    }
+
+    res.json({ text: transcript.text || '' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Transcription failed' });
   }
 });
 
