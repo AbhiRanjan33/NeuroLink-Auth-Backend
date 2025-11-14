@@ -1,31 +1,61 @@
 // backend/server.js
+require('dotenv').config();
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const multer = require('multer');
+const { CloudinaryStorage } = require('multer-storage-cloudinary'); // ← CORRECT
+const cloudinary = require('cloudinary').v2;
 
 const app = express();
+
+// Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-mongoose.connect(
-  'mongodb+srv://ranjanabhi2468_db_user:5IkHfpx60WlHYRQa@cluster0.xc3da1w.mongodb.net/neurolink?retryWrites=true&w=majority'
-)
+// --- CLOUDINARY CONFIG ---
+cloudinary.config({
+  cloud_name: 'drqhllyex',
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// --- MULTER + CLOUDINARY STORAGE ---
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'neurolink/journals',
+    resource_type: 'auto', // image or video
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov'],
+  },
+});
+
+const upload = multer({ storage });
+
+// --- MONGO DB ---
+mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.error(err));
+  .catch(err => console.error('MongoDB Error:', err));
 
-// USER SCHEMA — with journals array
+// --- USER SCHEMA ---
 const userSchema = new mongoose.Schema({
   fingerprintId: { type: String, required: true, unique: true },
   userId: { type: String, required: true, unique: true },
   name: String,
   email: { type: String, unique: true, sparse: true },
   journals: [{
-    text: { type: String, required: true },
+    text: String,
+    mediaUrl: String,
+    caption: String,
     timestamp: { type: Date, default: Date.now },
   }],
 });
 
 const User = mongoose.model('User', userSchema);
+
+// --- ROUTES ---
 
 // AUTH
 app.post('/auth', async (req, res) => {
@@ -91,13 +121,41 @@ app.post('/save-profile', async (req, res) => {
   }
 });
 
-// NEW: SAVE JOURNAL
-app.post('/save-journal', async (req, res) => {
-  const { userId, text } = req.body;
+// UPLOAD MEDIA
+app.post('/upload-media', upload.single('file'), async (req, res) => {
   try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+
+    res.json({
+      success: true,
+      url: req.file.path,        // Cloudinary URL
+      public_id: req.file.filename,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// SAVE JOURNAL
+app.post('/save-journal', async (req, res) => {
+  const { userId, text, mediaUrl, caption } = req.body;
+
+  try {
+    const journalEntry = {
+      text: text || '',
+      timestamp: new Date(),
+    };
+
+    if (mediaUrl) {
+      journalEntry.mediaUrl = mediaUrl;
+      journalEntry.caption = caption || '';
+    }
+
     const user = await User.findOneAndUpdate(
       { userId },
-      { $push: { journals: { text, timestamp: new Date() } } },
+      { $push: { journals: journalEntry } },
       { new: true }
     );
 
@@ -114,7 +172,9 @@ app.post('/save-journal', async (req, res) => {
   }
 });
 
+// HEALTH
 app.get('/', (req, res) => res.send('NeuroLink Backend OK'));
 
+// START
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server on port ${PORT}`));
